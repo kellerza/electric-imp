@@ -5,21 +5,26 @@
  * Usage:
  *   TimedOutput(<pin>)
  *     pin - hardware.pin OR null
- *   agentOn(agent_on)
- *     Bind an agent listener to set minutes, call from Agent:
- *     device.send(agent_on, min)
  *   onTest(f(min))
  *     Callback to modify the minutes before set (i.e. set min=0)
  *   onSet(f(min))
- *     Call with the final min value, typically after the pin is set 
+ *     Call with the final min value, typically after the pin is set
  *     Alternatively used to perform a set function iso setting a pin
  *   read()
  *   minutes(min) - switch on for min minutes, 0 will switch off
  *   off() - alias for minutes(0)
  *
+ * Managing all_values & link with Agent
+ *   linkAgent(agent_link_name)
+ *     Bind an agent listener to set minutes, call from Agent:
+ *     device.send(agent_link_name, min)
+ *   _updateAgent(agent_link_name)
+ *     Will automatically update all_values and send to the Agent
+ *
  * Author: Johann Kellerman
  * License: CC BY-SA
  ************************************************/
+all_values <- {}
 class TimedOutput {
   static version = [1 0 0]
   _pin = null;
@@ -28,6 +33,7 @@ class TimedOutput {
   _callback = null;
   _testcallback = null;
   _value = 0;
+  _agent_link_name = null;
 
   constructor(pin=null) {
     _pin = pin; //Unconfigured IO pin, eg hardware.pin2
@@ -37,10 +43,6 @@ class TimedOutput {
   function onTest(testCB) {_testcallback = testCB;return this;}
   function onSet(callback)   {_callback = callback;return this;}
   function onWrite(callback) {_callback = callback;return this;}
-  function agentOn(listener) {
-    agent.on(listener, minutes.bindenv(this));
-    return this;
-  }
   function read() {return _value;}
   function off() {minutes(0);}
   function minutes(min) {
@@ -62,5 +64,22 @@ class TimedOutput {
     }
     if (_pin!=null) _pin.write(_value);
     if (_callback!=null) _callback(min);
+    _updateAgent();
+  }
+
+  function linkAgent(agent_link_name) {
+    agent.on(agent_link_name, minutes.bindenv(this));
+    _agent_link_name = agent_link_name;
+    _updateAgent();
+    return this;
+  }
+  function _updateAgent() {
+    if (_agent_link_name == null) return;
+    if (_value == 0) {
+      all_values[_agent_link_name] <- 0;
+    } else {
+      all_values[_agent_link_name] <- _timer_time;
+    }
+    agent.send("all_values", all_values);
   }
 }
