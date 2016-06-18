@@ -10,7 +10,6 @@
  * calls for a Home Automation controller like
  * Home-Assistant
  ************************************************/
-## Implement all_values hook for TimedOutput
 all_values <- {}
 device.on("all_values", function (_new_all_values) {
   all_values = _new_all_values;
@@ -32,7 +31,7 @@ app.post("/all_values", function (context) {
   foreach (key, value in context.req.body) {
     if (key in all_values) {
       device.send(key, value.tointeger())
-      res[key] <= value
+      res[key] <- value
     }
     if (res.len()>0) {
       context.send(200, res);

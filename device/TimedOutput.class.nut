@@ -15,11 +15,10 @@
  *   off() - alias for minutes(0)
  *
  * Managing all_values & link with Agent
- *   linkAgent(agent_link_name)
+ *   linkAgent(agent_link_name=null)
  *     Bind an agent listener to set minutes, call from Agent:
  *     device.send(agent_link_name, min)
- *   _updateAgent(agent_link_name)
- *     Will automatically update all_values and send to the Agent
+ *     if no parameters, will update all_values and send to the Agent
  *
  * Author: Johann Kellerman
  * License: CC BY-SA
@@ -64,22 +63,15 @@ class TimedOutput {
     }
     if (_pin!=null) _pin.write(_value);
     if (_callback!=null) _callback(min);
-    _updateAgent();
+    linkAgent();
   }
-
-  function linkAgent(agent_link_name) {
-    agent.on(agent_link_name, minutes.bindenv(this));
-    _agent_link_name = agent_link_name;
-    _updateAgent();
-    return this;
-  }
-  function _updateAgent() {
-    if (_agent_link_name == null) return;
-    if (_value == 0) {
-      all_values[_agent_link_name] <- 0;
-    } else {
-      all_values[_agent_link_name] <- _timer_time;
-    }
-    agent.send("all_values", all_values);
+  function linkAgent(bind_name=null) {
+    if (bind_name != null) {
+      agent.on(bind_name, minutes.bindenv(this))
+      _agent_link_name = bind_name}
+    if (_agent_link_name != null) {
+      all_values[_agent_link_name] <- (_value == 0)?0:_timer_time
+      agent.send("all_values", all_values)}
+    return this
   }
 }
