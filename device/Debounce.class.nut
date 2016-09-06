@@ -56,7 +56,7 @@ class Debounce {
     if (bind_name != null) {
       _agent_link_name = bind_name}
     if (_agent_link_name != null) {
-      all_values[_agent_link_name] <- (_value == 0)?0:1
+      all_values[_agent_link_name] <- read()
       agent.send("all_values", all_values)}
     return this
   }
