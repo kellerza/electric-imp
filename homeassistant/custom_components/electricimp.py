@@ -3,15 +3,16 @@ Electric Imp.
 
 Custom Electric Imp platform
 """
-
 import logging
 import requests
-from time import sleep
 
-from homeassistant.helpers.discovery import load_platform
+import voluptuous as vol
+
 from homeassistant.components.light import Light
 from homeassistant.components.switch import SwitchDevice
 from homeassistant.components.binary_sensor import BinarySensorDevice
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.discovery import load_platform
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import track_utc_time_change
 from homeassistant.const import EVENT_HOMEASSISTANT_START
@@ -24,16 +25,15 @@ DOMAIN = 'electricimp'
 
 IMPURL = 'https://agent.electricimp.com/{}/all_values'
 
+AGENT_ID = 'agent_id'
+CONFIG_SCHEMA = vol.Schema({
+    DOMAIN: vol.Schema({
+        vol.Required(AGENT_ID): vol.All(cv.ensure_list, [str])
+    }),
+}, extra=vol.ALLOW_EXTRA)
 
-def push_obj(obj):
-    """Save an object to be retrieved later."""
-    import homeassistant.components.qwikswitch as qwikswitch
-    oid = id(obj)
-    qwikswitch.QSUSB[oid] = obj
-    return oid
 
-
-class ImpSet(object):
+class ImpBase(object):
     """Write to imp url."""
 
     def __init__(self, url, name, prop_name, val):
@@ -54,9 +54,8 @@ class ImpSet(object):
                 _LOGGER.warning('imp_set %s failed [%s] %s \n%s', self._name,
                                 result.status_code, result.text, self.url)
 
-    # pylint: disable=no-self-use
     @property
-    def should_poll(self):
+    def should_poll(self):  # pylint: disable=no-self-use
         """State Polling needed."""
         return False
 
@@ -66,9 +65,34 @@ class ImpSet(object):
         return self._name
 
     @property
+    def device_state_attributes(self):
+        """Return the state attributes."""
+        return {
+            'source': self.url
+        }
+
+    def update_value(self, value):
+        """Update HA state."""
+        if value != self._value:
+            self._value = value
+            _LOGGER.debug("update_value %s = %s", self._name, self._value)
+            # pylint: disable=no-member
+            super().update_ha_state()  # Part of Entity/ToggleEntity
+
+
+class ImpBase_on_off(ImpBase):
+    @property
     def is_on(self):
         """Check if On (non-zero)."""
         return self._value > 0
+
+    def turn_on(self, **kwargs):  # pylint: disable=unused-argument
+        """Turn the device on."""
+        self.imp_set(180)
+
+    def turn_off(self, **kwargs):  # pylint: disable=unused-argument
+        """Turn the device off."""
+        self.imp_set(0)
 
     def update_value(self, value):
         """Update HA state."""
@@ -78,30 +102,20 @@ class ImpSet(object):
             # pylint: disable=no-member
             super().update_ha_state()  # Part of Entity/ToggleEntity
 
-    # pylint: disable=unused-argument
-    def turn_on(self, **kwargs):
-        """Turn the device on."""
-        self.imp_set(180)
 
-    # pylint: disable=unused-argument
-    def turn_off(self, **kwargs):
-        """Turn the device off."""
-        self.imp_set(0)
-
-
-class ImpLight(ImpSet, Light):
+class ImpLight(ImpBase_on_off, Light):
     """Imp Light."""
 
     pass
 
 
-class ImpSwitch(ImpSet, SwitchDevice):
+class ImpSwitch(ImpBase_on_off, SwitchDevice):
     """Imp Light."""
 
     pass
 
 
-class ImpBinarySensor(ImpSet, BinarySensorDevice):
+class ImpBinarySensor(ImpBase, BinarySensorDevice):
     """Imp Light."""
 
     @property
@@ -114,13 +128,22 @@ class ImpBinarySensor(ImpSet, BinarySensorDevice):
         return None
 
 
-class ImpSensor(ImpSet, Entity):
+class ImpSensor(ImpBase, Entity):
     """Imp Light."""
 
     @property
     def state(self):
         """Return the state of the sensor."""
         return self._value
+
+    @property
+    def unit_of_measurement(self):
+        return "°C"
+
+    # @property
+    # def entity_picture(self):
+    #    """Weather symbol if type is symbol."""
+    #    return None
 
 
 def get_json(agent_ids):
@@ -140,7 +163,7 @@ def get_json(agent_ids):
 # pylint: disable=too-many-locals
 def setup(hass, config):
     """Setup the QSUSB component."""
-    agent_ids = config[DOMAIN].get('agent_id')
+    agent_ids = config[DOMAIN].get(AGENT_ID)
     _LOGGER.debug('AgentIDs: %s', ', '.join(agent_ids))
 
     defs = {'light': (ImpLight, 'light'),
@@ -167,19 +190,15 @@ def setup(hass, config):
             all_devices[key] = cls(url, display_name, prop_name, val)
 
             # Store in dev per domain... used to add_devices
-            if not hass_domain in dev_per_domain:
+            if hass_domain not in dev_per_domain:
                 dev_per_domain[hass_domain] = []
 
             dev_per_domain[hass_domain].append(all_devices[key])
 
-        for dom in dev_per_domain:
-            dev_per_domain[dom] = push_obj(dev_per_domain[dom])
-
-        for dom in dev_per_domain:
-            sleep(2)
-            load_platform(hass, dom, 'generic',
-                          {'domain': dom.title(),
-                           'add_devices': dev_per_domain[dom]})
+        for dom, val in dev_per_domain.items():
+            key = '{}.{}'.format(DOMAIN, dom)
+            hass.data[key] = val
+            load_platform(hass, dom, 'generic', {'add_devices': key})
 
     def imp_timer(event):  # pylint: disable=unused-argument
         """Query the agents."""
@@ -194,12 +213,10 @@ def setup(hass, config):
                     _LOGGER.error('Cannot update device: %s', str(err))
 
     def imp_start(event):
-        sleep(1)
         json = get_json(agent_ids)
         imp_discover(json)
         track_utc_time_change(hass, imp_timer, second=[20, 50])
 
     hass.bus.listen_once(EVENT_HOMEASSISTANT_START, imp_start)
-    
 
     return True

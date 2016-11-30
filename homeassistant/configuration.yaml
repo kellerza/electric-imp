@@ -1,0 +1,8 @@
+# The agent ids are strings kept in secrets.yaml, e.g.:
+#   imp_swembad: XYZ123454
+
+electricimp:
+  agent_id:
+    - !secret imp_garage
+    - !secret imp_swembad
+    - !secret imp_sproeier
